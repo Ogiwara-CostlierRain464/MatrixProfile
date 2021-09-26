@@ -97,13 +97,51 @@ void SlidingDotProduct(const std::vector<double> &Q,
 
 void CalculateDistanceProfile(const std::vector<double> &QT,
                               const std::vector<double> &sum,
+                              size_t m,
                               size_t i,
                               std::vector<double> &out_D){
+  // at here, we don't skip trivial match
   // return D[i]
+  double mu_i = mean(sum, i, m);
+  double std_i = Std(sum, i, m, mu_i);
+
+  out_D = std::vector<double>(QT.size());
+
+  for(size_t j = 0; j < QT.size(); j++){
+    double mu_j = mean(sum, i, m);
+    double std_j = Std(sum, i, m, mu_j);
+
+    double d_i_j = sqrt(2 * m * (
+        1 - ((QT[j] - m * mu_i * mu_j) / (m * std_i * std_j))
+      ));
+    out_D[j] = d_i_j;
+  }
+}
+
+void ElementWiseMin(std::vector<double> &P,
+                    std::vector<uint32_t> &I,
+                    // d_i_0, d_i_1, ...
+                    const std::vector<double> &D,
+                    size_t i,
+                    size_t m){
+  // if D it is smaller than P, update P
+  // expect it is within trivial match zone.
+  assert(P.size() == I.size());
+  assert(P.size() == D.size());
+  for(size_t j = 0; j < P.size() ; j++){
+    if((i - (m/2) < j) and (j < i + (m/2))){
+      // Skip trivial match.
+      continue;
+    }
+    if(D[j] < P[j]){
+      P[j] = D[j];
+      I[j] = i;
+    }
+  }
 }
 
 void STOMP(std::vector<double> &T,
-           std::vector<float> &P,
+           std::vector<double> &P,
            std::vector<uint32_t> &I,
            size_t m){
   size_t n = T.size(), l = n - m + 1;
@@ -115,7 +153,17 @@ void STOMP(std::vector<double> &T,
     std::vector<double>(T.begin(), T.begin()+m),
       T, QT);
   std::vector<double> QT_first(QT.begin(), QT.end());
-
+  std::vector<double> D;
+  CalculateDistanceProfile(QT, sum, m, 0, D);
+  P = D; I = std::vector<uint32_t>(l, 0);
+  for(size_t i = 1 ; i < l ; i++){
+    for(size_t j = l-1; j >= 1; j--){
+      QT[j] = QT[j-1] - T[j-1]*T[i-1] + T[j+m-1]*T[i+m-1];
+    }
+    QT[0] = QT_first[i];
+    CalculateDistanceProfile(QT, sum, m, i, D);
+    ElementWiseMin(P, I, D, i, m);
+  }
 }
 
 void read_file(const char *filename,
