@@ -13,7 +13,7 @@ int main(int argc, char* argv[]){
 
   size_t m = atoi(argv[1]);
   std::vector<double> T;
-  readFile(argv[2], T, "%lf");
+  read_file(argv[2], T, "%lf");
   size_t n = T.size();
   size_t l = n - m + 1;
   std::vector<float> profile(l, CC_MIN);

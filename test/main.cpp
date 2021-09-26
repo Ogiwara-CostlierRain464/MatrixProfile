@@ -6,11 +6,11 @@ using namespace std;
 class Unit: public ::testing::Test{};
 
 TEST_F(Unit, SlidingDotProduct){
-  std::vector<double> a{1,1,1,1};
-  std::vector<double> b{1,1,1,1};
-  CArray out;
-  SlidingDotProduct(a, b , out);
-  out[0].real();
+  std::vector<double> Q{1,1};
+  std::vector<double> T{1,1,1,1};
+  std::vector<double> QT;
+  SlidingDotProduct(Q, T , QT);
+
 }
 
 int main(int argc, char **argv){

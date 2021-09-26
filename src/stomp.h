@@ -19,7 +19,7 @@ union mp_entry{
 };
 
 
-inline void ComputeSum(const std::vector<double> &T,
+inline void compute_sum(const std::vector<double> &T,
                        std::vector<double> &out_sum){
   out_sum = std::vector<double>(T.size(), 0);
   for(size_t i = 0; i < out_sum.size(); i++){
@@ -72,7 +72,10 @@ void ElementwiseMultiplication(const CArray &Q_raf, const CArray &T_af, CArray &
  * @param Q: A query Q.
  * @param T: user provided time series T.
  */
-void SlidingDotProduct(std::vector<double> &Q, std::vector<double> &T, CArray &out){
+void SlidingDotProduct(const std::vector<double> &Q,
+                       const std::vector<double> &T,
+                       std::vector<double> &QT){
+  assert(T.size() > Q.size());
   size_t n = T.size(), m = Q.size();
   // copy
   std::vector<double> T_a(T.begin(), T.end());
@@ -83,22 +86,39 @@ void SlidingDotProduct(std::vector<double> &Q, std::vector<double> &T, CArray &o
   from_double_vec(Q_ra, Q_raf);
   from_double_vec(T_a, T_af);
   fft(Q_raf); fft(T_af);
-  ElementwiseMultiplication(Q_raf, T_af, out);
-  ifft(out);
+  CArray tmp;
+  ElementwiseMultiplication(Q_raf, T_af, tmp);
+  ifft(tmp);
+  QT = std::vector<double>(n - m + 1);
+  for(size_t i = m; i < n; i++){
+    QT[i - m] = tmp[i].real();
+  }
+}
+
+void CalculateDistanceProfile(const std::vector<double> &QT,
+                              const std::vector<double> &sum,
+                              size_t i,
+                              std::vector<double> &out_D){
+  // return D[i]
 }
 
 void STOMP(std::vector<double> &T,
-           std::vector<float> &profile,
-           std::vector<uint32_t> &profile_idx,
+           std::vector<float> &P,
+           std::vector<uint32_t> &I,
            size_t m){
-  size_t n = T.size();
-  size_t l = n - m + 1;
+  size_t n = T.size(), l = n - m + 1;
   // mu, sigma
-  // どこかで必ず計算O(1)
+  std::vector<double> sum;
+  compute_sum(T, sum);
+  std::vector<double> QT;
+  SlidingDotProduct(
+    std::vector<double>(T.begin(), T.begin()+m),
+      T, QT);
+  std::vector<double> QT_first(QT.begin(), QT.end());
 
 }
 
-void readFile(const char *filename,
+void read_file(const char *filename,
               std::vector<double>& v,
               const char *format_str){
   FILE *f = fopen(filename, "r");
