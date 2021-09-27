@@ -5,8 +5,6 @@
 #include <cstddef>
 #include "fft.h"
 
-#define CC_MIN -FLT_MAX
-
 union mp_entry{
   float floats[2];
   uint32_t ints[2];
@@ -20,10 +18,16 @@ union mp_entry{
 
 
 inline void compute_sum(const std::vector<double> &T,
-                       std::vector<double> &out_sum){
+                       std::vector<double> &out_sum,
+                       std::vector<double> &out_square_sum){
   out_sum = std::vector<double>(T.size(), 0);
-  for(size_t i = 0; i < out_sum.size(); i++){
-    out_sum[i] = out_sum[i] + T[i];
+  out_square_sum = std::vector<double>(T.size(), 0);
+
+  out_sum[0] = T[0];
+  out_square_sum[0] = T[0] * T[0];
+  for(size_t i = 1; i < out_sum.size(); i++){
+    out_sum[i] = out_sum[i-1] + T[i];
+    out_square_sum[i] = out_square_sum[i-1] + T[i] * T[i];
   }
 }
 
@@ -33,30 +37,30 @@ inline double mean(const std::vector<double> &sum,
                    size_t m){
   // μ_i is the mean of T_i,m
   double coeff = 1.0 / (double) m;
-  size_t i_plus_m = i + m;
   size_t n = sum.size();
+  size_t l = n + m - 1;
 
   if(i == 0){
     return sum[m - 1] * coeff;
   }else{
-    assert(i < n - 1);
-    return (sum[i_plus_m-1] - sum[i-1]) * coeff;
+    assert(i < l);
+    return (sum[i+m-1] - sum[i-1]) * coeff;
   }
 }
 
-inline double Std(const std::vector<double> &sum,
+inline double Std(const std::vector<double> &square_sum,
                   size_t i,
                   size_t m,
                   double mean){
   // σ_i is the standard deviation of T_i,m
   double coeff = 1.0 / (double) m;
-  size_t i_plus_m = i + m;
-  size_t n = sum.size();
+  size_t n = square_sum.size();
+  size_t l = n + m - 1;
   if(i == 0){
-    return 1 / sqrt((sum[m-1] * coeff) - mean * mean);
+    return 1.0 / sqrt((square_sum[m-1] * coeff) - mean * mean);
   }else{
-    assert(i_plus_m < n + m);
-    return 1 / sqrt(((sum[i_plus_m-1] - sum[i-1]) * coeff) - (mean * mean));
+    assert(i < l);
+    return 1 / sqrt(((square_sum[i+m-1] - square_sum[i-1]) * coeff) - (mean * mean));
   }
 }
 
@@ -90,29 +94,30 @@ void SlidingDotProduct(const std::vector<double> &Q,
   ElementwiseMultiplication(Q_raf, T_af, tmp);
   ifft(tmp);
   QT = std::vector<double>(n - m + 1);
-  for(size_t i = m; i < n; i++){
-    QT[i - m] = tmp[i].real();
+  for(size_t i = m-1; i < n; i++){
+    QT[i-m-1] = tmp[i].real();
   }
 }
 
 void CalculateDistanceProfile(const std::vector<double> &QT,
                               const std::vector<double> &sum,
+                              const std::vector<double> &square_sum,
                               size_t m,
                               size_t i,
                               std::vector<double> &out_D){
   // at here, we don't skip trivial match
   // return D[i]
   double mu_i = mean(sum, i, m);
-  double std_i = Std(sum, i, m, mu_i);
+  double std_i = Std(square_sum, i, m, mu_i);
 
   out_D = std::vector<double>(QT.size());
 
   for(size_t j = 0; j < QT.size(); j++){
-    double mu_j = mean(sum, i, m);
-    double std_j = Std(sum, i, m, mu_j);
+    double mu_j = mean(sum, j, m);
+    double std_j = Std(square_sum, j, m, mu_j);
 
-    double d_i_j = sqrt(2 * m * (
-        1 - ((QT[j] - m * mu_i * mu_j) / (m * std_i * std_j))
+    double d_i_j = sqrt(2.0 * (double ) m * (
+        1 - ((QT[j] - (double) m * mu_i * mu_j) / ((double) m * std_i * std_j))
       ));
     out_D[j] = d_i_j;
   }
@@ -144,24 +149,26 @@ void STOMP(std::vector<double> &T,
            std::vector<double> &P,
            std::vector<uint32_t> &I,
            size_t m){
-  size_t n = T.size(), l = n - m + 1;
+  size_t n = T.size(), l = n-m+1;
   // mu, sigma
   std::vector<double> sum;
-  compute_sum(T, sum);
+  std::vector<double> square_sum;
+  compute_sum(T, sum, square_sum);
   std::vector<double> QT;
   SlidingDotProduct(
     std::vector<double>(T.begin(), T.begin()+m),
       T, QT);
   std::vector<double> QT_first(QT.begin(), QT.end());
   std::vector<double> D;
-  CalculateDistanceProfile(QT, sum, m, 0, D);
+  CalculateDistanceProfile(QT, sum, square_sum ,m, 0, D);
+  auto a = std::min_element(D.begin(), D.end()) - D.begin();
   P = D; I = std::vector<uint32_t>(l, 0);
   for(size_t i = 1 ; i < l ; i++){
     for(size_t j = l-1; j >= 1; j--){
       QT[j] = QT[j-1] - T[j-1]*T[i-1] + T[j+m-1]*T[i+m-1];
     }
     QT[0] = QT_first[i];
-    CalculateDistanceProfile(QT, sum, m, i, D);
+    CalculateDistanceProfile(QT, sum, square_sum,m, i, D);
     ElementWiseMin(P, I, D, i, m);
   }
 }
